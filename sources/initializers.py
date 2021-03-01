@@ -1,5 +1,5 @@
 """
-Initizlizer functions package
+Initializer functions package
 
 Initializers are generators, which produce floats indefinetely.
 Utilizing generators allows to produce values based on previously
