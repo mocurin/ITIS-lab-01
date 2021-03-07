@@ -1,7 +1,6 @@
 """Project source code package"""
-from .activations import Activation
-from .initializers import Initializer
-from .historian import Historian
-from .neuron import Neuron
+from .models import Neuron
 
-__all__ = ['Activation', 'Initializer', 'Historian', 'Neuron']
+__all__ = [
+    'Neuron'
+]

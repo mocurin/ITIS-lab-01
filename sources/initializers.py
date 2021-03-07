@@ -1,13 +1,7 @@
-"""
-Initializer functions package
-
-Initializers are generators, which produce floats indefinetely.
-Utilizing generators allows to produce values based on previously
-produced values.
-"""
+"""Common initializer functions package"""
 from typing import Generator
 
-# Type hints
+# Type hinting
 Initializer = Generator[float, None, None]
 
 

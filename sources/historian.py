@@ -3,13 +3,13 @@ import logging
 
 
 class Historian:
-    def __init__(self, fmtstr: str = ''):
+    def __init__(self, fmtstr: str = None):
         self._fmtstr = fmtstr
         self._storage = list()
 
-    def append(self, *args):
-        if self._fmtstr:
-            logging.info(self._fmtstr.format(*args))
+    def append(self, *args, **kwargs):
+        if self._fmtstr is not None:
+            logging.info(self._fmtstr.format(*args, **kwargs))
         self._storage.append(args)
 
     @property

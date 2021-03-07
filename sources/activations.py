@@ -1,21 +1,31 @@
-"""
-Activation functions package
+"""Common activation functions package"""
+import abc
 
-Activations are functions, which take float value and apply activation
-function to it, producing another float value
-"""
-from typing import Callable
-
-# Type hints
-Activation = Callable[[float], float]
+from .misc import subclasshook_helper
 
 
-class IActivation:
+REQUIRED = (
+    '__call__',
+    'derivative'
+)
+
+
+class IActivation(metaclass=abc.ABCMeta):
+    @classmethod
+    def __subclasshook__(cls, subclass) -> bool:
+        return subclasshook_helper(REQUIRED)
+
+    @abc.abstractmethod
     def __call__(self, value: float) -> float:
         raise NotImplementedError
 
+    @abc.abstractmethod
     def derivative(self, value: float) -> float:
         raise NotImplementedError
+
+
+# Type hinting alias
+Activation = IActivation
 
 
 class Identity(IActivation):
@@ -24,3 +34,6 @@ class Identity(IActivation):
 
     def derivative(self, _) -> float:
         return 1.
+
+
+identity = Identity()
