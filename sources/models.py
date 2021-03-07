@@ -1,7 +1,7 @@
 """Models package"""
 import abc
 
-from typing import Any, Callable, Dict, Iterable, List
+from typing import Any, Callable, Dict, Iterable, List, Tuple
 
 from .activations import identity, Activation
 from .generators import DataGenerator
@@ -147,7 +147,7 @@ class Neuron(IModel):
             write_batch_history: bool = True,
             write_epoch_history: bool = True,
             batch_historian: Historian = None,
-            epoch_historian: Historian = None) -> List:
+            epoch_historian: Historian = None) -> Tuple[List, List]:
         if batch_historian is None and write_batch_history:
             batch_historian = self._default_batch_histroian(verbose)
 
@@ -208,4 +208,5 @@ class Neuron(IModel):
                 break
 
         # Return histories
-        return batch_historian, epoch_historian
+        return (list() if batch_historian is None else batch_historian.storage,
+                list() if epoch_historian is None else epoch_historian.storage)
