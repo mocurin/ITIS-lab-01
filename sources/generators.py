@@ -1,6 +1,7 @@
 """Common data generator package"""
 from typing import Generator, Sequence, Tuple
-from itertools import cycle, product
+from itertools import compress, cycle, islice, product
+from more_itertools import distinct_permutations
 
 
 # Type hinting
@@ -8,18 +9,18 @@ RawDataGenerator = Generator[Tuple[Sequence[float], float], None, None]
 
 
 class DataGenerator:
-    def __init__(self, generator: RawDataGenerator, epoch_size: int, stop_epoch: int):
+    def __init__(self, generator: RawDataGenerator, epoch_size: int, stop_epoch: int = None):
         self._generator = generator
         self._epoch_size = epoch_size
         self._stop_epoch = stop_epoch
 
     @property
     def epoch(self):
-        return zip(range(self._epoch_size), self._generator)
+        return islice(self._generator, self._epoch_size)
 
     @property
     def eternity(self):
-        return ((idx, self.epoch) for idx in range(self._stop_epoch))
+        return (self.epoch for _ in range(self._stop_epoch))
 
     @property
     def epoch_size(self):
@@ -43,8 +44,11 @@ def boolean_generator(boolean: Sequence[int]) -> RawDataGenerator:
 
 
 def subset(generator: Generator, mask: Sequence) -> Generator:
-    # Allow generator values on non-zero positions from mask
-    return (values
-            for values, allow
-            in zip(generator, mask)
-            if allow)
+    chunked = islice(generator, len(mask))
+    return cycle(compress(chunked, mask))
+
+
+def boolean_mask_generator(length: int):
+    return (distinct_permutations([0] * idx + [1] * (length - idx))
+            for idx
+            in range(length))

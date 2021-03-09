@@ -1,6 +1,6 @@
 """Data-writer & logger class"""
 import logging
-import pickle
+import json
 
 
 class Historian:
@@ -11,18 +11,17 @@ class Historian:
     def append(self, **kwargs):
         if self._fmtstr is not None:
             logging.info(self._fmtstr.format(**kwargs))
-        values = [value for value in kwargs.values()]
-        self._storage.append(values)
+        self._storage.append(kwargs)
 
     @property
     def storage(self):
         return self._storage
 
     def save(self, path: str):
-        with open(path, 'wb+') as file:
-            pickle.dump(self.storage, file)
+        with open(path, 'w+') as file:
+            json.dump(self.storage, file, indent=2)
 
     @staticmethod
     def load(path: str):
         with open(path, 'r') as file:
-            pickle.load(file)
+            json.load(file)

@@ -1,5 +1,6 @@
 """Models package"""
 import abc
+import enum
 
 from typing import Any, Callable, Dict, Iterable, List, Tuple
 
@@ -46,6 +47,12 @@ DEFAULT_METRICS_EARLY_STOP = {
 }
 
 
+class FitState(enum.IntEnum):
+    EPOCH_STOP = 0,
+    EARLY_STOP = 1,
+    STALE_STOP = 2
+
+
 class Neuron(IModel):
     def __init__(self,
                  inputs: int,
@@ -80,22 +87,23 @@ class Neuron(IModel):
                   target: float,
                   norm: float) -> float:
         # Compute output
-        output = self.predict(samples)
+        net = self.predict(samples, activate=False)
+        output = round(self._activation(net))
 
         # Compute error
         delta = self._loss(output, target)
 
         # Compute new weights
-        self._weights = [weight + norm * delta * self._activation.derivative(output) * input_value
+        self._weights = [weight + norm * delta * self._activation.derivative(net) * input_value
                          for input_value, weight
                          in zip(samples, self._weights)]
 
         if self._bias is not None:
-            self._bias += norm * delta * self._activation.derivative(output) * 1.
+            self._bias += norm * delta * self._activation.derivative(net) * 1.
 
         return delta, output
 
-    def predict(self, samples: Iterable[float]) -> float:
+    def predict(self, samples: Iterable[float], activate=True) -> float:
         # Sum of element-wise input & weights  multiplication
         net = sum(value * weight
                   for value, weight
@@ -104,7 +112,10 @@ class Neuron(IModel):
         if self._bias is not None:
             net += self._bias * 1.
 
-        return self._activation(net)
+        if activate:
+            return round(self._activation(net))
+
+        return net
 
     def _default_sample_histroian(self, verbose: bool):
         if not verbose:
@@ -133,13 +144,15 @@ class Neuron(IModel):
         fmtstr = ('Epoch N{idx: <3}',
                   'weigths: {weights}',
                   'bias: {bias}',
+                  'output: {output}',
                   fmtstr)
         fmtstr = '  '.join(fmtstr)
 
         return Historian(fmtstr)
 
     def fit(self,
-            data_generator: DataGenerator,
+            train_data_generator: DataGenerator,
+            validation_data_generator: DataGenerator,
             norm: float,
             *,
             verbose: bool = True,
@@ -153,22 +166,19 @@ class Neuron(IModel):
         if epoch_historian is None and write_epoch_history:
             epoch_historian = self._default_epoch_histroian(verbose)
 
-        # Consume one epoch to acquire complete list of targets for metrics
-        targets = [target
-                   for _, (_, target)
-                   in data_generator.epoch] if self._metrics else list()
+        weights = self._weights + [self._bias]
 
-        for idx, epoch in data_generator.eternity:
-            outputs = list()
+        for idx, epoch in enumerate(train_data_generator.eternity):
 
-            for jdx, (sample, target) in epoch:
-                error, output = self._fit_once(sample, target, norm)
+            # Fit on every sample from epoch
+            for jdx, (sample, target) in enumerate(epoch):
+                error, _ = self._fit_once(sample, target, norm)
 
                 if write_sample_history:
                     # Form kwargs
                     data = {
                         'idx': jdx,
-                        'total': data_generator.epoch_size,
+                        'total': train_data_generator.epoch_size,
                         'sample': sample,
                         'target': target,
                         'error': error,
@@ -176,8 +186,13 @@ class Neuron(IModel):
 
                     sample_historian.append(**data)
 
-                # Save outputs for metrics
-                outputs.append(output)
+            # Compute score over epoch of validation data
+            outputs = [(self.predict(sample), target)
+                       for sample, target
+                       in validation_data_generator.epoch]
+
+            # Transpose list of pair to a pair of lists
+            outputs, targets = map(list, zip(*outputs))
 
             # Compute every metric
             metrics = {name: metric(outputs, targets)
@@ -188,6 +203,8 @@ class Neuron(IModel):
                 # Form kwargs once again
                 data = {
                     'idx': idx,
+                    'output': outputs,
+                    # Round for pretty print
                     'weights': self._weights,
                     'bias': self._bias,
                     **metrics,
@@ -195,16 +212,24 @@ class Neuron(IModel):
 
                 epoch_historian.append(**data)
 
-            # Check if any early stop shoots
-            try:
-                for key, value in metrics.items():
-                    early_stop = self._metrics_early_stop.get(key)
+            # Check if any weights updated
+            new_weights = self._weights + [self._bias]
 
-                    # Cant simply break since check happens in nested loop
-                    if early_stop(value):
-                        raise StopIteration
-            except StopIteration:
-                break
+            if not any(weight - new_weight for weight, new_weight in zip(weights, new_weights)):
+                return (sample_historian, epoch_historian), FitState.STALE_STOP
+
+            # Save last weights
+            weights = new_weights
+
+            # Check if any early stop shoots
+            for key, value in metrics.items():
+                early_stop = self._metrics_early_stop.get(key)
+
+                # Early stop has not happened
+                if not early_stop(value):
+                    continue
+
+                return (sample_historian, epoch_historian), FitState.EARLY_STOP
 
         # Return histories
-        return (sample_historian, epoch_historian)
+        return (sample_historian, epoch_historian), FitState.EPOCH_STOP

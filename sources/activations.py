@@ -1,5 +1,6 @@
 """Common activation functions package"""
 import abc
+import math
 
 from .misc import subclasshook_helper
 
@@ -28,6 +29,18 @@ class IActivation(metaclass=abc.ABCMeta):
 Activation = IActivation
 
 
+# str to Activation mapping
+activations = dict()
+
+
+def register(cls):
+    """Register class in activations dictionary"""
+    activations[cls.__name__] = cls
+
+    return cls
+
+
+@register
 class Identity(IActivation):
     def __call__(self, value: float) -> float:
         return value
@@ -39,12 +52,22 @@ class Identity(IActivation):
 identity = Identity()
 
 
+@register
 class Threshold(IActivation):
     def __init__(self, threshold: float = 0):
         self._threshold = threshold
 
     def __call__(self, value: float) -> float:
-        return 1 if value >= self._threshold else 0
+        return 1. if value >= self._threshold else 0.
 
     def derivative(self, _) -> float:
         return 1.
+
+
+@register
+class Logistic(IActivation):
+    def __call__(self, value: float) -> float:
+        return 1. / (1. + math.exp(-value))
+
+    def derivative(self, value: float) -> float:
+        return self(value) * (1. - self(value))
