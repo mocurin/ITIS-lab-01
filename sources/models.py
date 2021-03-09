@@ -166,26 +166,9 @@ class Neuron(IModel):
         if epoch_historian is None and write_epoch_history:
             epoch_historian = self._default_epoch_histroian(verbose)
 
-        weights = self._weights + [self._bias]
+        weights = None
 
         for idx, epoch in enumerate(train_data_generator.eternity):
-
-            # Fit on every sample from epoch
-            for jdx, (sample, target) in enumerate(epoch):
-                error, _ = self._fit_once(sample, target, norm)
-
-                if write_sample_history:
-                    # Form kwargs
-                    data = {
-                        'idx': jdx,
-                        'total': train_data_generator.epoch_size,
-                        'sample': sample,
-                        'target': target,
-                        'error': error,
-                    }
-
-                    sample_historian.append(**data)
-
             # Compute score over epoch of validation data
             outputs = [(self.predict(sample), target)
                        for sample, target
@@ -215,7 +198,7 @@ class Neuron(IModel):
             # Check if any weights updated
             new_weights = self._weights + [self._bias]
 
-            if not any(weight - new_weight for weight, new_weight in zip(weights, new_weights)):
+            if weights and not any(weight - new_weight for weight, new_weight in zip(weights, new_weights)):
                 return (sample_historian, epoch_historian), FitState.STALE_STOP
 
             # Save last weights
@@ -230,6 +213,22 @@ class Neuron(IModel):
                     continue
 
                 return (sample_historian, epoch_historian), FitState.EARLY_STOP
+
+            # Fit on every sample from epoch
+            for jdx, (sample, target) in enumerate(epoch):
+                error, _ = self._fit_once(sample, target, norm)
+
+                if write_sample_history:
+                    # Form kwargs
+                    data = {
+                        'idx': jdx,
+                        'total': train_data_generator.epoch_size,
+                        'sample': sample,
+                        'target': target,
+                        'error': error,
+                    }
+
+                    sample_historian.append(**data)
 
         # Return histories
         return (sample_historian, epoch_historian), FitState.EPOCH_STOP
