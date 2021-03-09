@@ -1,10 +1,10 @@
 """Common data generator package"""
-from typing import Generator, Sequence
+from typing import Generator, Sequence, Tuple
 from itertools import cycle, product
 
 
 # Type hinting
-RawDataGenerator = Generator[[Sequence[float], float], None, None]
+RawDataGenerator = Generator[Tuple[Sequence[float], float], None, None]
 
 
 class DataGenerator:
@@ -19,14 +19,18 @@ class DataGenerator:
 
     @property
     def eternity(self):
-        return zip(range(self._stop_epoch), self.epoch)
+        return ((idx, self.epoch) for idx in range(self._stop_epoch))
 
     @property
     def epoch_size(self):
         return self._epoch_size
 
 
-def boolean_generator(boolean: Sequence[str]) -> RawDataGenerator:
+def boolean_str_to_seq(boolean: str) -> Sequence[int]:
+    return [int(sym) for sym in boolean]
+
+
+def boolean_generator(boolean: Sequence[int]) -> RawDataGenerator:
     # Check whether `len(boolean)` is a power of two
     if not (size := len(boolean)) or (size & (size - 1)):
         raise ValueError(f"Given sequence ({boolean}) length does not equal power of two: {size}")

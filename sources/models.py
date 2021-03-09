@@ -42,7 +42,7 @@ DEFAULT_METRICS = {
 }
 
 DEFAULT_METRICS_EARLY_STOP = {
-    'Hamming distance': lambda x: x != 0
+    'Hamming distance': lambda x: x == 0
 }
 
 
@@ -60,7 +60,7 @@ class Neuron(IModel):
         # Generate weights by taking `len(inputs)` times from `weights_initializer`
         self._weights = [weight
                          for _, weight
-                         in zip(inputs, weights_initializer)]
+                         in zip(range(inputs), weights_initializer)]
 
         # Take once from bias generator
         self._bias = next(bias_initializer) if use_bias else None
@@ -106,15 +106,15 @@ class Neuron(IModel):
 
         return self._activation(net)
 
-    def _default_batch_histroian(self, verbose: bool):
+    def _default_sample_histroian(self, verbose: bool):
         if not verbose:
             return Historian()
 
-        fmtstr = ('N{idx}/{total}',
-                  'Samples: {samples}',
-                  'Target: {target}',
-                  'Error: {error}')
-        fmtstr = ', '.join(fmtstr)
+        fmtstr = ('N{idx: <3}/{total: <3}',
+                  'sample: {sample}',
+                  'target: {target}',
+                  'error: {error}')
+        fmtstr = '  '.join(fmtstr)
 
         return Historian(fmtstr)
 
@@ -125,57 +125,56 @@ class Neuron(IModel):
         # Metrics format string
         fmtstr = (f'{name}: {{{name}}}'
                   for name, _
-                  in self._metrics)
+                  in self._metrics.items())
         fmtstr = ', '.join(fmtstr)
-        fmtstr = f'Metrics: [{fmtstr}]'
+        fmtstr = f'metrics: [{fmtstr}]'
 
         # Other fields
-        fmtstr = ('Epoch N{idx}',
-                  'Weigths: {weights}',
-                  'Bias: {bias}',
+        fmtstr = ('Epoch N{idx: <3}',
+                  'weigths: {weights}',
+                  'bias: {bias}',
                   fmtstr)
-        fmtstr = ', '.join(fmtstr)
+        fmtstr = '  '.join(fmtstr)
 
         return Historian(fmtstr)
 
     def fit(self,
             data_generator: DataGenerator,
-            epoch_size: int,
             norm: float,
             *,
             verbose: bool = True,
-            write_batch_history: bool = True,
+            write_sample_history: bool = True,
             write_epoch_history: bool = True,
-            batch_historian: Historian = None,
+            sample_historian: Historian = None,
             epoch_historian: Historian = None) -> Tuple[List, List]:
-        if batch_historian is None and write_batch_history:
-            batch_historian = self._default_batch_histroian(verbose)
+        if sample_historian is None and write_sample_history:
+            sample_historian = self._default_sample_histroian(verbose)
 
         if epoch_historian is None and write_epoch_history:
             epoch_historian = self._default_epoch_histroian(verbose)
 
         # Consume one epoch to acquire complete list of targets for metrics
         targets = [target
-                   for _, target
+                   for _, (_, target)
                    in data_generator.epoch] if self._metrics else list()
 
         for idx, epoch in data_generator.eternity:
             outputs = list()
 
-            for jdx, (samples, target) in epoch:
-                error, output = self._fit_once(samples, target)
+            for jdx, (sample, target) in epoch:
+                error, output = self._fit_once(sample, target, norm)
 
-                if write_batch_history:
+                if write_sample_history:
                     # Form kwargs
                     data = {
                         'idx': jdx,
                         'total': data_generator.epoch_size,
-                        'samples': samples,
+                        'sample': sample,
                         'target': target,
                         'error': error,
                     }
 
-                    batch_historian.append(**data)
+                    sample_historian.append(**data)
 
                 # Save outputs for metrics
                 outputs.append(output)
@@ -183,7 +182,7 @@ class Neuron(IModel):
             # Compute every metric
             metrics = {name: metric(outputs, targets)
                        for name, metric
-                       in self._metrics}
+                       in self._metrics.items()}
 
             if write_epoch_history:
                 # Form kwargs once again
@@ -194,7 +193,7 @@ class Neuron(IModel):
                     **metrics,
                 }
 
-                batch_historian.append(**data)
+                epoch_historian.append(**data)
 
             # Check if any early stop shoots
             try:
@@ -208,5 +207,4 @@ class Neuron(IModel):
                 break
 
         # Return histories
-        return (list() if batch_historian is None else batch_historian.storage,
-                list() if epoch_historian is None else epoch_historian.storage)
+        return (sample_historian, epoch_historian)

@@ -37,3 +37,14 @@ class Identity(IActivation):
 
 
 identity = Identity()
+
+
+class Threshold(IActivation):
+    def __init__(self, threshold: float = 0):
+        self._threshold = threshold
+
+    def __call__(self, value: float) -> float:
+        return 1 if value >= self._threshold else 0
+
+    def derivative(self, _) -> float:
+        return 1.
