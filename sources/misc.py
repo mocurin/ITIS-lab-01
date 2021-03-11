@@ -14,3 +14,7 @@ def subclasshook_helper(subclass, methods: List[str]) -> bool:
 
     # Either `True` or `NotImeplemeted`
     return all(methods) or NotImplemented
+
+
+def around(*args, precision: int = 3):
+    return [round(value, precision) for value in args]

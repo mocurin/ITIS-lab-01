@@ -10,7 +10,7 @@ from .initializers import zeros, ones, Initializer
 from .historian import Historian
 from .losses import difference, Loss
 from .metrics import hamming, Metric
-from .misc import subclasshook_helper
+from .misc import subclasshook_helper, around
 
 
 REQUIRED = (
@@ -39,11 +39,11 @@ Model = IModel
 MetricEarlyStop = Callable[[Any], bool]
 
 DEFAULT_METRICS = {
-    'Hamming distance': hamming
+    'E': hamming
 }
 
 DEFAULT_METRICS_EARLY_STOP = {
-    'Hamming distance': lambda x: x == 0
+    'E': lambda x: x == 0
 }
 
 
@@ -122,9 +122,9 @@ class Neuron(IModel):
             return Historian()
 
         fmtstr = ('N{idx: <3}/{total: <3}',
-                  'sample: {sample}',
-                  'target: {target}',
-                  'error: {error}')
+                  'X={sample}',
+                  't={target}',
+                  'e={error}')
         fmtstr = '  '.join(fmtstr)
 
         return Historian(fmtstr)
@@ -134,7 +134,7 @@ class Neuron(IModel):
             return Historian()
 
         # Metrics format string
-        fmtstr = (f'{name}: {{{name}}}'
+        fmtstr = (f'{name}={{{name}}}'
                   for name, _
                   in self._metrics.items())
         fmtstr = ', '.join(fmtstr)
@@ -142,9 +142,9 @@ class Neuron(IModel):
 
         # Other fields
         fmtstr = ('Epoch N{idx: <3}',
-                  'weigths: {weights}',
-                  'bias: {bias}',
-                  'output: {output}',
+                  'W={weights}',
+                  'b={bias}',
+                  'Y={output}',
                   fmtstr)
         fmtstr = '  '.join(fmtstr)
 
@@ -188,8 +188,8 @@ class Neuron(IModel):
                     'idx': idx,
                     'output': outputs,
                     # Round for pretty print
-                    'weights': self._weights,
-                    'bias': self._bias,
+                    'weights': around(*self._weights),
+                    'bias': around(self._bias),
                     **metrics,
                 }
 
