@@ -49,6 +49,6 @@ def subset(generator: Generator, mask: Sequence) -> Generator:
 
 
 def boolean_mask_generator(length: int):
-    return (distinct_permutations([0] * idx + [1] * (length - idx))
+    return (distinct_permutations([0] * (length - idx - 1) + [1] * idx + 1)
             for idx
             in range(length))

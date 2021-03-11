@@ -58,17 +58,12 @@ def main():
                 )
 
                 mask = ''.join(str(value) for value in mask)
-                # Mask [1, ..., 1] -> no subset
-                if not idx:
-                    logging.info("Saved [1, ..., 1]")
-                    epoch_report.save(f"histories/first_{activation_name}.txt")
-                    continue
 
                 if state is FitState.EARLY_STOP:
                     logging.info("Early stop!")
                     epoch_report.storage.append({'mask': mask})
-                    epoch_report.save(f"histories/last_{activation_name}.txt")
-                    continue
+                    epoch_report.save(f"histories/{activation_name}.txt")
+                    break
 
                 if state is FitState.STALE_STOP:
                     logging.info("Stale stop!")
