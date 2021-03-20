@@ -2,28 +2,30 @@
 import abc
 import enum
 
-from typing import Any, Callable, Dict, Iterable, List, Tuple
+from itertools import chain
+from typing import Any, Callable, Dict, Iterable, List
 
 from .activations import identity, Activation
 from .generators import DataGenerator
-from .initializers import zeros, ones, Initializer
-from .historian import Historian
+from .initializers import zeros, Initializer
+from .historian import NeuronHistorian, LoggingVerbosity, WriteVerbosity, FitEvents
 from .losses import difference, Loss
 from .metrics import hamming, Metric
 from .misc import subclasshook_helper
 
 
-REQUIRED = (
+_REQUIRED = (
     '__call__',
     'fit',
-    'predict'
+    'predict',
+    'describe'
 )
 
 
 class IModel(metaclass=abc.ABCMeta):
     @classmethod
     def __subclasshook__(cls, subclass) -> bool:
-        return subclasshook_helper(REQUIRED)
+        return subclasshook_helper(_REQUIRED)
 
     @abc.abstractmethod
     def fit(self, *args, **kwargs):
@@ -33,44 +35,55 @@ class IModel(metaclass=abc.ABCMeta):
     def predict(self, *args, **kwargs):
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def describe(selg):
+        raise NotImplementedError
+
 
 # Type hinting alias
 Model = IModel
 MetricEarlyStop = Callable[[Any], bool]
 
+
 DEFAULT_METRICS = {
-    'Hamming distance': hamming
+    'E': hamming
 }
 
 DEFAULT_METRICS_EARLY_STOP = {
-    'Hamming distance': lambda x: x == 0
+    'E': lambda x: x == 0
 }
 
 
-class FitState(enum.IntEnum):
-    EPOCH_STOP = 0,
-    EARLY_STOP = 1,
+class FitStopEvents(enum.IntEnum):
+    EPOCH_STOP = 0
+    METRIC_STOP = 1
     STALE_STOP = 2
 
 
 class Neuron(IModel):
+    historian = NeuronHistorian
+
     def __init__(self,
                  inputs: int,
                  *,
                  use_bias: bool = True,
                  activation: Activation = identity,
-                 weights_initializer: Initializer = zeros(),
-                 bias_initializer: Initializer = ones(),
+                 weights_initializer: Initializer = zeros(),  # Intentional mutable default argument
+                 bias_initializer: Initializer = zeros(),  # Intentional mutable default argument
                  loss: Loss = difference,
                  metrics: Dict[str, Metric] = None,
                  metrics_early_stop: Dict[str, MetricEarlyStop] = None):
+
         # Generate weights by taking `len(inputs)` times from `weights_initializer`
         self._weights = [weight
                          for _, weight
                          in zip(range(inputs), weights_initializer)]
 
-        # Take once from bias generator
-        self._bias = next(bias_initializer) if use_bias else None
+        self._use_bias = use_bias
+
+        # Append bias weight in front
+        if use_bias:
+            self._weights = [next(bias_initializer), *self._weights]
 
         # Avoid mutable default argument
         self._metrics = DEFAULT_METRICS if metrics is None else metrics
@@ -86,149 +99,137 @@ class Neuron(IModel):
                   samples: Iterable[float],
                   target: float,
                   norm: float) -> float:
-        # Compute output
+        # Compute output, preserve net value
         net = self.predict(samples, activate=False)
-        output = round(self._activation(net))
+        output = self._activation(net)
 
         # Compute error
         delta = self._loss(output, target)
 
-        # Compute new weights
-        self._weights = [weight + norm * delta * self._activation.derivative(net) * input_value
-                         for input_value, weight
-                         in zip(samples, self._weights)]
+        # Append fake sample in front of given if bias is used
+        if self._use_bias:
+            samples = chain([1.], samples)
 
-        if self._bias is not None:
-            self._bias += norm * delta * self._activation.derivative(net) * 1.
+        # Compute new weights
+        self._weights = [
+            weight + norm * delta * self._activation.derivative(net) * input_value
+            for input_value, weight
+            in zip(samples, self._weights)
+        ]
 
         return delta, output
 
     def predict(self, samples: Iterable[float], activate=True) -> float:
+        # Append fake sample in front of given if bias is used
+        if self._use_bias:
+            samples = chain([1.], samples)
+
         # Sum of element-wise input & weights  multiplication
-        net = sum(value * weight
-                  for value, weight
-                  in zip(samples, self._weights))
+        net = sum(
+            value * weight
+            for value, weight
+            in zip(samples, self._weights)
+        )
 
-        if self._bias is not None:
-            net += self._bias * 1.
-
-        if activate:
-            return round(self._activation(net))
-
-        return net
-
-    def _default_sample_histroian(self, verbose: bool):
-        if not verbose:
-            return Historian()
-
-        fmtstr = ('N{idx: <3}/{total: <3}',
-                  'sample: {sample}',
-                  'target: {target}',
-                  'error: {error}')
-        fmtstr = '  '.join(fmtstr)
-
-        return Historian(fmtstr)
-
-    def _default_epoch_histroian(self, verbose: bool):
-        if not verbose:
-            return Historian()
-
-        # Metrics format string
-        fmtstr = (f'{name}: {{{name}}}'
-                  for name, _
-                  in self._metrics.items())
-        fmtstr = ', '.join(fmtstr)
-        fmtstr = f'metrics: [{fmtstr}]'
-
-        # Other fields
-        fmtstr = ('Epoch N{idx: <3}',
-                  'weigths: {weights}',
-                  'bias: {bias}',
-                  'output: {output}',
-                  fmtstr)
-        fmtstr = '  '.join(fmtstr)
-
-        return Historian(fmtstr)
+        # Apply activation based in `activate` boolean
+        return self._activation(net) if activate else net
 
     def fit(self,
             train_data_generator: DataGenerator,
             validation_data_generator: DataGenerator,
-            norm: float,
-            *,
-            verbose: bool = True,
-            write_sample_history: bool = True,
-            write_epoch_history: bool = True,
-            sample_historian: Historian = None,
-            epoch_historian: Historian = None) -> Tuple[List, List]:
-        if sample_historian is None and write_sample_history:
-            sample_historian = self._default_sample_histroian(verbose)
+            norm: float, delta: float, *,
+            logging_verbosity: LoggingVerbosity = LoggingVerbosity.EPOCH,
+            write_verbosity: WriteVerbosity = WriteVerbosity.EPOCH,
+            plot_prefix: str = 'neuron') -> List:
+        # Create logger & history writer
+        historian = self.historian(logging_verbosity, write_verbosity)
 
-        if epoch_historian is None and write_epoch_history:
-            epoch_historian = self._default_epoch_histroian(verbose)
-
-        weights = None
+        # Predict stop event
+        stop_event = FitStopEvents.EPOCH_STOP
 
         for idx, epoch in enumerate(train_data_generator.eternity):
             # Compute score over epoch of validation data
-            outputs = [(self.predict(sample), target)
-                       for sample, target
-                       in validation_data_generator.epoch]
+            outputs = [
+                (self.predict(sample), target)
+                for sample, target
+                in validation_data_generator.epoch
+            ]
 
             # Transpose list of pair to a pair of lists
             outputs, targets = map(list, zip(*outputs))
 
             # Compute every metric
-            metrics = {name: metric(outputs, targets)
-                       for name, metric
-                       in self._metrics.items()}
+            metrics = {
+                name: metric(outputs, targets)
+                for name, metric
+                in self._metrics.items()
+            }
 
-            if write_epoch_history:
-                # Form kwargs once again
-                data = {
-                    'idx': idx,
-                    'output': outputs,
-                    # Round for pretty print
-                    'weights': self._weights,
-                    'bias': self._bias,
-                    **metrics,
-                }
+            # Write epoch history
+            historian.store(
+                FitEvents.EPOCH,
+                self,
+                idx,
+                outputs,
+                metrics
+            )
 
-                epoch_historian.append(**data)
+            # Check if any metric early stop shoots
+            for name, checker in self._metrics_early_stop.items():
+                metric = metrics[name]
 
-            # Check if any weights updated
-            new_weights = self._weights + [self._bias]
+                if checker(metric):
+                    # Mark as stopped from metric
+                    stop_event = FitStopEvents.METRIC_STOP
+                    break
 
-            if weights and not any(weight - new_weight for weight, new_weight in zip(weights, new_weights)):
-                return (sample_historian, epoch_historian), FitState.STALE_STOP
+            # Break out outer cycle after metric stop
+            if stop_event == FitStopEvents.METRIC_STOP:
+                break
 
-            # Save last weights
-            weights = new_weights
-
-            # Check if any early stop shoots
-            for key, value in metrics.items():
-                early_stop = self._metrics_early_stop.get(key)
-
-                # Early stop has not happened
-                if not early_stop(value):
-                    continue
-
-                return (sample_historian, epoch_historian), FitState.EARLY_STOP
+            # Remember weights for stale stop check
+            before_weights = [weight for weight in self._weights]
 
             # Fit on every sample from epoch
             for jdx, (sample, target) in enumerate(epoch):
-                error, _ = self._fit_once(sample, target, norm)
+                error, output = self._fit_once(sample, target, norm)
 
-                if write_sample_history:
-                    # Form kwargs
-                    data = {
-                        'idx': jdx,
-                        'total': train_data_generator.epoch_size,
-                        'sample': sample,
-                        'target': target,
-                        'error': error,
-                    }
+                # Write batch history
+                historian.store(
+                    FitEvents.BATCH,
+                    self,
+                    jdx,
+                    sample,
+                    output,
+                    error
+                )
 
-                    sample_historian.append(**data)
+            # Check if any weights changed
+            total_change = sum(
+                abs(bw - aw)
+                for bw, aw
+                in zip(before_weights, self._weights)
+            )
 
-        # Return histories
-        return (sample_historian, epoch_historian), FitState.EPOCH_STOP
+            # Mark as stopped from stale weights
+            if total_change < delta:
+                stop_event = FitStopEvents.STALE_STOP
+                break
+
+        # Write eternity history
+        historian.store(
+            FitEvents.ETERNITY,
+            self,
+            historian,
+            stop_event,
+            plot_prefix
+        )
+
+        # Eternity end
+        return historian, stop_event
+
+    def describe(self):
+        # Return model associated data
+        return [
+            self._weights,
+        ]

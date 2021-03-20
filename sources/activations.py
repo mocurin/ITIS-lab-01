@@ -49,7 +49,24 @@ class Identity(IActivation):
         return 1.
 
 
+# Since Identity does not require __init__
 identity = Identity()
+
+
+@register
+class Logistic(IActivation):
+    def _raw(self, value: float) -> float:
+        return 1. / (1. + math.exp(-value))
+
+    def __call__(self, value: float) -> int:
+        return round(self._raw(value))
+
+    def derivative(self, value: float) -> float:
+        return self._raw(value) * (1. - self._raw(value))
+
+
+# Since Logistic does not require __init__
+logistic = Logistic()
 
 
 @register
@@ -58,16 +75,7 @@ class Threshold(IActivation):
         self._threshold = threshold
 
     def __call__(self, value: float) -> float:
-        return 1. if value >= self._threshold else 0.
+        return 1 if value >= self._threshold else 0
 
     def derivative(self, _) -> float:
         return 1.
-
-
-@register
-class Logistic(IActivation):
-    def __call__(self, value: float) -> float:
-        return 1. / (1. + math.exp(-value))
-
-    def derivative(self, value: float) -> float:
-        return self(value) * (1. - self(value))

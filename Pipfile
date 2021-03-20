@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 more-itertools = "*"
+matplotlib = "*"
 
 [dev-packages]
 flake8 = "*"

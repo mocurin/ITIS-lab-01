@@ -48,7 +48,14 @@ def subset(generator: Generator, mask: Sequence) -> Generator:
     return cycle(compress(chunked, mask))
 
 
-def boolean_mask_generator(length: int):
-    return (distinct_permutations([0] * (length - idx - 1) + [1] * idx + 1)
-            for idx
-            in range(length))
+def _boolean_switcher(num: int, length: int):
+    for idx in range(length):
+        yield 1 if idx < num else 0
+
+
+def boolean_mask_generator(length: int, start_from: int = 1):
+    return (
+        list(reversed(list(distinct_permutations(_boolean_switcher(idx, length)))))
+        for idx
+        in range(start_from, length)
+    )
