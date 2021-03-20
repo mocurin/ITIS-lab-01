@@ -53,6 +53,7 @@ def _boolean_switcher(num: int, length: int):
         yield 1 if idx < num else 0
 
 
+# have to reverse disctinct_permutation result
 def boolean_mask_generator(length: int, start_from: int = 1):
     return (
         list(reversed(list(distinct_permutations(_boolean_switcher(idx, length)))))
